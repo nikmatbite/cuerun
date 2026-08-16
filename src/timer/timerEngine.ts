@@ -8,21 +8,17 @@
  * Pause exclusion formula:
  *   duration = accumulatedMs + (now - resumedAt)
  *
- * where accumulatedMs is the sum of all completed running segments before the
- * current one, and resumedAt is the timestamp when the current segment began.
+ * Page Visibility API dipakai untuk detect HP layar mati/hidup.
+ * Saat layar mati, JS berhenti — tapi timestamp tetap valid.
+ * Saat layar hidup lagi, elapsed dihitung dari timestamp sebelum mati.
  */
 
-export interface TimerSnapshot {
-  elapsedMs: number
-  state: 'idle' | 'running' | 'paused' | 'finished'
-}
-
 export interface TimerSegment {
-  accumulatedMs: number   // ms from all previous completed segments
-  segmentStartMs: number  // Date.now() when current segment started (0 if idle/finished)
-  pausedMs: number        // Date.now() when currently paused (0 if not paused)
+  accumulatedMs: number
+  segmentStartMs: number
+  pausedMs: number
   state: 'idle' | 'running' | 'paused' | 'finished'
-  finalMs: number         // Only set in 'finished' state
+  finalMs: number
 }
 
 export function createIdleTimer(): TimerSegment {
@@ -56,8 +52,6 @@ export function pauseTimer(segment: TimerSegment, now: number = Date.now()): Tim
 
 export function resumeTimer(segment: TimerSegment, now: number = Date.now()): TimerSegment {
   if (segment.state !== 'paused') return segment
-  // The paused interval is excluded: treat segment as if it started fresh now,
-  // but carry over the accumulated ms from before the pause.
   const pauseDuration = now - segment.pausedMs
   return {
     ...segment,
@@ -91,12 +85,6 @@ export function computeElapsed(segment: TimerSegment, now: number = Date.now()):
   }
 }
 
-// ─── Recovery ────────────────────────────────────────────────────────────────
-
-/**
- * Reconstruct a TimerSegment from persisted rack data.
- * Called when user returns to app mid-rack (after refresh, background, etc.)
- */
 export function reconstructFromRack(
   accumulatedMs: number,
   resumedAt: string | null,
@@ -118,7 +106,9 @@ export function reconstructFromRack(
     }
   }
 
-  // Running: treat resumed time as segment start
+  // Running: resumedAt adalah awal segment saat ini
+  // Dengan ini, elapsed sudah otomatis include waktu saat HP layar mati
+  // karena segmentStartMs = timestamp lama, now = timestamp sekarang
   const resumedAtMs = resumedAt ? new Date(resumedAt).getTime() : now
   return {
     accumulatedMs,
@@ -129,12 +119,6 @@ export function reconstructFromRack(
   }
 }
 
-// ─── Format ──────────────────────────────────────────────────────────────────
-
-/**
- * Format milliseconds as MM:SS.mmm
- * e.g. 75430 → "01:15.430"
- */
 export function formatMs(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000)
   const minutes = Math.floor(totalSeconds / 60)
@@ -143,9 +127,6 @@ export function formatMs(ms: number): string {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(millis).padStart(3, '0')}`
 }
 
-/**
- * Format milliseconds as MM:SS (no millis, for history lists)
- */
 export function formatMsShort(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000)
   const minutes = Math.floor(totalSeconds / 60)

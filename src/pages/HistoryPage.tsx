@@ -1,17 +1,22 @@
 import React, { useState, useMemo } from 'react'
-import { Session, Rack } from '@/types'
+import { Session, Rack, GameMode, Drill, Variant } from '@/types'
 import { useData } from '@/hooks/useData'
 import { modeLabel, drillLabel, variantLabel, groupDateLabel, formatDate } from '@/utils'
 import { formatMs, formatMsShort } from '@/timer/timerEngine'
 import { calculateSessionStatistics } from '@/statistics/stats'
-import { filterCompleted } from '@/statistics/stats'
-import { GameMode, Drill, Variant } from '@/types'
+import { getDB } from '@/database/db'
+
+async function deleteRack(rackId: string): Promise<void> {
+  const db = await getDB()
+  await db.delete('racks', rackId)
+}
 
 export default function HistoryPage() {
-  const { sessions, racks, loading } = useData()
+  const { sessions, racks, loading, reload } = useData()
   const [expandedSession, setExpandedSession] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<Rack | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
-  // Group sessions by date (descending)
   const grouped = useMemo(() => {
     const sorted = [...sessions].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     const map = new Map<string, Session[]>()
@@ -22,6 +27,15 @@ export default function HistoryPage() {
     }
     return Array.from(map.entries())
   }, [sessions])
+
+  const handleDeleteConfirm = async () => {
+    if (!confirmDelete) return
+    setDeleting(true)
+    await deleteRack(confirmDelete.id)
+    setConfirmDelete(null)
+    setDeleting(false)
+    await reload()
+  }
 
   if (loading) {
     return (
@@ -61,12 +75,53 @@ export default function HistoryPage() {
                   onToggle={() =>
                     setExpandedSession((prev) => (prev === session.id ? null : session.id))
                   }
+                  onDeleteRack={setConfirmDelete}
                 />
               ))}
             </div>
           </div>
         ))}
       </div>
+
+      {/* Confirm Delete Modal */}
+      {confirmDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm"
+          onClick={() => !deleting && setConfirmDelete(null)}
+        >
+          <div
+            className="w-full max-w-lg bg-surface-2 border border-border rounded-t-2xl p-6 pb-10 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="font-sans font-semibold text-text-primary text-base">Hapus rack ini?</h2>
+            <p className="text-text-secondary text-sm leading-relaxed">
+              {modeLabel(confirmDelete.mode)} · {drillLabel(confirmDelete.drill)}
+              {confirmDelete.variant ? ` · ${variantLabel(confirmDelete.variant)}` : ''}{' '}
+              {confirmDelete.status === 'completed'
+                ? `— ${formatMs(confirmDelete.durationMs)}`
+                : '(Dibatalkan)'}
+              <br />
+              <span className="text-text-muted">Data ini akan dihapus permanen dan tidak bisa dikembalikan.</span>
+            </p>
+            <div className="flex flex-col gap-2 pt-2">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                disabled={deleting}
+                className="w-full py-3.5 rounded-xl font-sans font-semibold text-sm bg-surface-3 text-text-secondary border border-border active:bg-surface-2 disabled:opacity-40"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                disabled={deleting}
+                className="w-full py-3.5 rounded-xl font-sans font-semibold text-sm bg-danger/10 text-danger border border-danger/30 active:bg-danger/20 disabled:opacity-40"
+              >
+                {deleting ? 'Menghapus…' : 'Hapus Rack'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -76,22 +131,27 @@ function SessionCard({
   racks,
   expanded,
   onToggle,
+  onDeleteRack,
 }: {
   session: Session
   racks: Rack[]
   expanded: boolean
   onToggle: () => void
+  onDeleteRack: (rack: Rack) => void
 }) {
   const sessionRacks = useMemo(
-    () => racks.filter((r) => r.sessionId === session.id && r.status === 'completed'),
+    () => racks.filter((r) => r.sessionId === session.id &&
+      (r.status === 'completed' || r.status === 'abandoned')),
     [racks, session.id]
   )
 
-  // Find unique mode+drill+variant combos in this session
+  const completedRacks = sessionRacks.filter((r) => r.status === 'completed')
+  const abandonedRacks = sessionRacks.filter((r) => r.status === 'abandoned')
+
   const groups = useMemo(() => {
     const seen = new Set<string>()
     const result: Array<{ mode: GameMode; drill: Drill; variant: Variant }> = []
-    for (const r of sessionRacks) {
+    for (const r of completedRacks) {
       const key = `${r.mode}|${r.drill}|${r.variant}`
       if (!seen.has(key)) {
         seen.add(key)
@@ -99,9 +159,7 @@ function SessionCard({
       }
     }
     return result
-  }, [sessionRacks])
-
-  const totalCompleted = sessionRacks.length
+  }, [completedRacks])
 
   return (
     <div className="bg-surface-2 border border-border rounded-2xl overflow-hidden">
@@ -117,9 +175,12 @@ function SessionCard({
             <span className="text-text-muted text-xs">{formatDate(session.createdAt)}</span>
           </div>
           <div className="text-text-secondary text-sm truncate">
-            {totalCompleted} rack selesai
+            {completedRacks.length} rack selesai
+            {abandonedRacks.length > 0 && (
+              <span className="ml-1.5 text-text-muted">· {abandonedRacks.length} dibatalkan</span>
+            )}
             {groups.length > 0 && (
-              <span className="ml-2 text-text-muted">
+              <span className="ml-1.5 text-text-muted">
                 · {groups.map((g) => modeLabel(g.mode)).filter((v, i, a) => a.indexOf(v) === i).join(', ')}
               </span>
             )}
@@ -134,12 +195,26 @@ function SessionCard({
 
       {expanded && (
         <div className="border-t border-border divide-y divide-border/50">
-          {groups.length === 0 ? (
-            <div className="px-5 py-4 text-text-muted text-sm">Tidak ada rack selesai di sesi ini.</div>
+          {sessionRacks.length === 0 ? (
+            <div className="px-5 py-4 text-text-muted text-sm">Tidak ada rack di sesi ini.</div>
           ) : (
-            groups.map((g, i) => (
-              <GroupDetail key={i} session={session} group={g} racks={racks} />
-            ))
+            <>
+              {groups.map((g, i) => (
+                <GroupDetail
+                  key={i}
+                  session={session}
+                  group={g}
+                  racks={racks}
+                  onDeleteRack={onDeleteRack}
+                />
+              ))}
+              {abandonedRacks.length > 0 && (
+                <AbandonedSection
+                  abandonedRacks={abandonedRacks}
+                  onDeleteRack={onDeleteRack}
+                />
+              )}
+            </>
           )}
         </div>
       )}
@@ -151,10 +226,12 @@ function GroupDetail({
   session,
   group,
   racks,
+  onDeleteRack,
 }: {
   session: Session
   group: { mode: GameMode; drill: Drill; variant: Variant }
   racks: Rack[]
+  onDeleteRack: (rack: Rack) => void
 }) {
   const stats = calculateSessionStatistics(
     session.id,
@@ -184,7 +261,6 @@ function GroupDetail({
 
   return (
     <div className="px-5 py-4">
-      {/* Group header */}
       <div className="flex items-center gap-2 mb-3">
         <div className="font-mono text-accent text-xs font-semibold">{modeLabel(group.mode)}</div>
         <div className="text-text-muted text-xs">
@@ -193,7 +269,6 @@ function GroupDetail({
         </div>
       </div>
 
-      {/* Stats row */}
       <div className="flex gap-4 mb-4 text-center">
         <div>
           <div className="font-mono text-text-primary font-semibold text-sm">{stats.racks}</div>
@@ -213,16 +288,65 @@ function GroupDetail({
         </div>
       </div>
 
-      {/* Individual racks */}
       <div className="space-y-1.5">
         {groupRacks.map((rack, i) => (
-          <div key={rack.id} className="flex items-center justify-between">
-            <span className="text-text-muted font-mono text-xs w-16">Rack {i + 1}</span>
-            <span className={`font-mono text-sm ${
+          <div key={rack.id} className="flex items-center gap-2">
+            <span className="text-text-muted font-mono text-xs w-14 flex-shrink-0">Rack {i + 1}</span>
+            <span className={`font-mono text-sm flex-1 ${
               rack.durationMs === stats.best ? 'text-accent font-semibold' : 'text-text-secondary'
             }`}>
               {formatMs(rack.durationMs)}
             </span>
+            <button
+              onClick={() => onDeleteRack(rack)}
+              className="text-text-muted active:text-danger transition-colors p-1.5 -mr-1 flex-shrink-0"
+              aria-label="Hapus rack"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6l-1 14H6L5 6" />
+                <path d="M10 11v6M14 11v6" />
+                <path d="M9 6V4h6v2" />
+              </svg>
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function AbandonedSection({
+  abandonedRacks,
+  onDeleteRack,
+}: {
+  abandonedRacks: Rack[]
+  onDeleteRack: (rack: Rack) => void
+}) {
+  return (
+    <div className="px-5 py-4">
+      <div className="font-mono text-text-muted text-xs tracking-[0.15em] uppercase mb-3">
+        Dibatalkan
+      </div>
+      <div className="space-y-1.5">
+        {abandonedRacks.map((rack) => (
+          <div key={rack.id} className="flex items-center gap-2">
+            <span className="text-text-muted font-mono text-xs flex-1 truncate">
+              {modeLabel(rack.mode)} · {drillLabel(rack.drill)}
+              {rack.variant ? ` · ${variantLabel(rack.variant)}` : ''}
+            </span>
+            <button
+              onClick={() => onDeleteRack(rack)}
+              className="text-text-muted active:text-danger transition-colors p-1.5 -mr-1 flex-shrink-0"
+              aria-label="Hapus rack"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6l-1 14H6L5 6" />
+                <path d="M10 11v6M14 11v6" />
+                <path d="M9 6V4h6v2" />
+              </svg>
+            </button>
           </div>
         ))}
       </div>

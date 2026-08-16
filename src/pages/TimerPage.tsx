@@ -9,13 +9,12 @@ import {
   completeRack,
   abandonRack,
   startNewRack,
-  getRack,
   getActiveRack,
 } from '@/services/sessionService'
 import Modal from '@/components/Modal'
 
 type TimerPhase = 'idle' | 'running' | 'paused' | 'finished'
-type ModalType = 'abandon' | 'next_options' | 'recovery' | null
+type ModalType = 'abandon' | 'recovery' | null
 
 interface Props {
   sessionId: string
@@ -36,7 +35,7 @@ export default function TimerPage({
   onEndSession,
   onChangeMode,
 }: Props) {
-  const { elapsedMs, timerState, start, pause, resume, stop, resetToIdle, restoreFromRack } = useTimer()
+  const { elapsedMs, start, pause, resume, stop, resetToIdle, restoreFromRack } = useTimer()
   const [rackId, setRackId] = useState(initialRackId)
   const [rackCount, setRackCount] = useState(0)
   const [completedTimes, setCompletedTimes] = useState<number[]>([])
@@ -50,18 +49,29 @@ export default function TimerPage({
   useEffect(() => {
     const checkRecovery = async () => {
       const active = await getActiveRack()
+
       const isStaleRack =
         active &&
         active.sessionId === sessionId &&
         (active.status === 'running' || active.status === 'paused') &&
-        active.id !== initialRackId // bukan rack yang baru saja dibuat
+        active.id !== initialRackId
 
       if (isStaleRack && active) {
         setRackId(active.id)
         restoreFromRack(active)
-        setPhase(active.status === 'paused' ? 'paused' : 'running')
-        setModal('recovery')
+
+        if (active.status === 'paused') {
+          // Rack di-pause user sebelumnya — tanya mau lanjut atau batalkan
+          setPhase('paused')
+          setModal('recovery')
+        } else {
+          // Rack sedang running — auto-resume langsung tanpa modal
+          // Timer engine sudah timestamp-based, jadi elapsed otomatis akurat
+          // termasuk waktu saat HP layar mati
+          setPhase('running')
+        }
       } else {
+        // Fresh start — tunggu user klik Start
         setPhase('idle')
       }
       setRecoveryChecked(true)
@@ -84,7 +94,6 @@ export default function TimerPage({
   const handleStop = async () => {
     if (stoppingRef.current) return
     stoppingRef.current = true
-
     const elapsed = elapsedMs
     stop()
     setPhase('finished')
@@ -96,11 +105,10 @@ export default function TimerPage({
   }
 
   const handleNextRack = async () => {
-    setModal(null)
     const rack = await startNewRack(sessionId, mode, drill, variant)
     setRackId(rack.id)
     resetToIdle()
-      setPhase('idle')
+    setPhase('idle')
   }
 
   const handleAbandonConfirm = async () => {
@@ -109,7 +117,7 @@ export default function TimerPage({
     resetToIdle()
     const rack = await startNewRack(sessionId, mode, drill, variant)
     setRackId(rack.id)
-      setPhase('idle')
+    setPhase('idle')
   }
 
   const handleRecoveryContinue = async () => {
@@ -125,7 +133,7 @@ export default function TimerPage({
     const rack = await startNewRack(sessionId, mode, drill, variant)
     setRackId(rack.id)
     resetToIdle()
-      setPhase('idle')
+    setPhase('idle')
   }
 
   const sessionBest = completedTimes.length > 0 ? Math.min(...completedTimes) : null
@@ -160,7 +168,6 @@ export default function TimerPage({
 
       {/* Timer Display */}
       <div className="flex-1 flex flex-col items-center justify-center px-6 gap-2">
-        {/* Phase indicator */}
         <div className={`text-xs font-mono tracking-[0.3em] uppercase mb-4 h-4 ${
           phase === 'running' ? 'text-accent' :
           phase === 'paused' ? 'text-warning' :
@@ -173,19 +180,19 @@ export default function TimerPage({
           {phase === 'idle' && '○ SIAP'}
         </div>
 
-        {/* Big timer */}
-        <div className={`font-mono font-bold tracking-tight select-none transition-colors ${
-          phase === 'finished' ? 'text-success' : 'text-text-primary'
-        }`} style={{ fontSize: 'clamp(3rem, 16vw, 5.5rem)', lineHeight: 1.1 }}>
+        <div
+          className={`font-mono font-bold tracking-tight select-none transition-colors ${
+            phase === 'finished' ? 'text-success' : 'text-text-primary'
+          }`}
+          style={{ fontSize: 'clamp(3rem, 16vw, 5.5rem)', lineHeight: 1.1 }}
+        >
           {formatMs(phase === 'finished' ? finalMs : elapsedMs)}
         </div>
 
-        {/* Rack count */}
         <div className="text-text-muted font-mono text-xs tracking-widest mt-2">
           RACK #{rackCount + (phase === 'finished' ? 0 : 1)}
         </div>
 
-        {/* Session best */}
         {sessionBest !== null && (
           <div className="text-text-muted font-mono text-xs mt-1">
             Terbaik sesi: {formatMsShort(sessionBest)}
@@ -195,21 +202,38 @@ export default function TimerPage({
 
       {/* Controls */}
       <div className="px-6 pb-6 space-y-3">
+        {phase === 'idle' && (
+          <button
+            onClick={() => { start(); setPhase('running') }}
+            className="w-full py-5 bg-accent rounded-2xl font-sans font-bold text-surface text-base active:bg-accent-dim transition-colors"
+          >
+            Mulai
+          </button>
+        )}
+
         {phase === 'running' && (
-          <div className="flex gap-3">
+          <>
+            <div className="flex gap-3">
+              <button
+                onClick={handlePause}
+                className="flex-1 py-5 bg-surface-2 border border-border rounded-2xl font-sans font-semibold text-text-primary text-base active:bg-surface-3 transition-colors"
+              >
+                Jeda
+              </button>
+              <button
+                onClick={handleStop}
+                className="flex-1 py-5 bg-accent rounded-2xl font-sans font-bold text-surface text-base active:bg-accent-dim transition-colors"
+              >
+                Stop
+              </button>
+            </div>
             <button
-              onClick={handlePause}
-              className="flex-1 py-5 bg-surface-2 border border-border rounded-2xl font-sans font-semibold text-text-primary text-base active:bg-surface-3 transition-colors"
+              onClick={() => setModal('abandon')}
+              className="w-full py-3 font-sans font-semibold text-danger/60 text-sm active:text-danger"
             >
-              Jeda
+              Batalkan Rack
             </button>
-            <button
-              onClick={handleStop}
-              className="flex-1 py-5 bg-accent rounded-2xl font-sans font-bold text-surface text-base active:bg-accent-dim transition-colors"
-            >
-              Stop
-            </button>
-          </div>
+          </>
         )}
 
         {phase === 'paused' && (
@@ -253,25 +277,6 @@ export default function TimerPage({
             </button>
           </>
         )}
-
-        {phase === 'idle' && (
-          <button
-            onClick={() => { start(); setPhase('running') }}
-            className="w-full py-5 bg-accent rounded-2xl font-sans font-bold text-surface text-base active:bg-accent-dim transition-colors"
-          >
-            Mulai
-          </button>
-        )}
-
-        {/* Abandon during running */}
-        {phase === 'running' && (
-          <button
-            onClick={() => setModal('abandon')}
-            className="w-full py-3 font-sans font-semibold text-danger/60 text-sm active:text-danger"
-          >
-            Batalkan Rack
-          </button>
-        )}
       </div>
 
       {/* Modals */}
@@ -289,8 +294,8 @@ export default function TimerPage({
 
       {modal === 'recovery' && (
         <Modal
-          title="Rack sebelumnya belum selesai"
-          body="Sepertinya kamu keluar saat rack sedang berjalan. Lanjutkan atau batalkan?"
+          title="Rack sebelumnya di-pause"
+          body="Kamu sebelumnya menjeda rack ini. Lanjutkan atau batalkan?"
           buttons={[
             { label: 'Lanjutkan Rack', onClick: handleRecoveryContinue, variant: 'default' },
             { label: 'Batalkan Rack', onClick: handleRecoveryAbandon, variant: 'danger' },
