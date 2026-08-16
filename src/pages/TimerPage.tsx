@@ -50,15 +50,19 @@ export default function TimerPage({
   useEffect(() => {
     const checkRecovery = async () => {
       const active = await getActiveRack()
-      if (active && active.sessionId === sessionId && (active.status === 'running' || active.status === 'paused')) {
+      const isStaleRack =
+        active &&
+        active.sessionId === sessionId &&
+        (active.status === 'running' || active.status === 'paused') &&
+        active.id !== initialRackId // bukan rack yang baru saja dibuat
+
+      if (isStaleRack && active) {
         setRackId(active.id)
         restoreFromRack(active)
         setPhase(active.status === 'paused' ? 'paused' : 'running')
         setModal('recovery')
       } else {
-        // Start fresh — auto-start the timer since rack was already created
-        start()
-        setPhase('running')
+        setPhase('idle')
       }
       setRecoveryChecked(true)
     }
@@ -96,25 +100,16 @@ export default function TimerPage({
     const rack = await startNewRack(sessionId, mode, drill, variant)
     setRackId(rack.id)
     resetToIdle()
-    // Auto-start
-    setTimeout(() => {
-      start()
-      setPhase('running')
-    }, 50)
+      setPhase('idle')
   }
 
   const handleAbandonConfirm = async () => {
     setModal(null)
     await abandonRack(rackId)
     resetToIdle()
-    setPhase('idle')
-    // Start a fresh rack
     const rack = await startNewRack(sessionId, mode, drill, variant)
     setRackId(rack.id)
-    setTimeout(() => {
-      start()
-      setPhase('running')
-    }, 50)
+      setPhase('idle')
   }
 
   const handleRecoveryContinue = async () => {
@@ -130,10 +125,7 @@ export default function TimerPage({
     const rack = await startNewRack(sessionId, mode, drill, variant)
     setRackId(rack.id)
     resetToIdle()
-    setTimeout(() => {
-      start()
-      setPhase('running')
-    }, 50)
+      setPhase('idle')
   }
 
   const sessionBest = completedTimes.length > 0 ? Math.min(...completedTimes) : null
