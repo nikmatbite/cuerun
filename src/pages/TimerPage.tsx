@@ -24,6 +24,7 @@ interface Props {
   variant: Variant
   onEndSession: () => void
   onChangeMode: () => void
+  onRackCompleted: () => void
 }
 
 export default function TimerPage({
@@ -34,6 +35,7 @@ export default function TimerPage({
   variant,
   onEndSession,
   onChangeMode,
+  onRackCompleted,
 }: Props) {
   const { elapsedMs, start, pause, resume, stop, resetToIdle, restoreFromRack } = useTimer()
   const [rackId, setRackId] = useState(initialRackId)
@@ -101,6 +103,7 @@ export default function TimerPage({
     setRackCount((c) => c + 1)
     setCompletedTimes((prev) => [...prev, elapsed])
     await completeRack(rackId, elapsed)
+    onRackCompleted()
     stoppingRef.current = false
   }
 

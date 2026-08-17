@@ -5,23 +5,35 @@ import { startNewSession, startNewRack } from '@/services/sessionService'
 
 interface Props {
   onSessionStarted: (sessionId: string, rackId: string, mode: GameMode, drill: Drill, variant: Variant) => void
+  onRackStarted: (rackId: string, mode: GameMode, drill: Drill, variant: Variant) => void
+  onEndSession: () => void
   existingSessionId: string | null
+  hasCompletedRack: boolean
 }
 
-type SetupStep = 'mode' | 'drill' | 'variant'
+type SetupStep = 'landing' | 'mode' | 'drill' | 'variant'
 
-export default function HomePage({ onSessionStarted, existingSessionId }: Props) {
-  const [step, setStep] = useState<SetupStep>('mode')
+export default function HomePage({
+  onSessionStarted,
+  onRackStarted,
+  onEndSession,
+  existingSessionId,
+  hasCompletedRack,
+}: Props) {
+  const [step, setStep] = useState<SetupStep>(existingSessionId ? 'mode' : 'landing')
   const [mode, setMode] = useState<GameMode | null>(null)
   const [drill, setDrill] = useState<Drill | null>(null)
   const [loading, setLoading] = useState(false)
+
+  const handleStartSession = () => {
+    setStep('mode')
+  }
 
   const handleMode = (m: GameMode) => {
     setMode(m)
     if (m === '8ball') {
       setStep('drill')
     } else {
-      // 9ball / 10ball → Full Rack, no drill choice
       handleStart(m, 'full_rack', null)
     }
   }
@@ -42,21 +54,30 @@ export default function HomePage({ onSessionStarted, existingSessionId }: Props)
   const handleStart = async (m: GameMode, d: Drill, v: Variant) => {
     setLoading(true)
     try {
-      let sessionId = existingSessionId
-      if (!sessionId) {
+      if (existingSessionId) {
+        // Sesi sudah ada — langsung buat rack baru
+        const rack = await startNewRack(existingSessionId, m, d, v)
+        onRackStarted(rack.id, m, d, v)
+      } else {
+        // Belum ada sesi — buat sesi + rack baru
         const session = await startNewSession()
-        sessionId = session.id
+        const rack = await startNewRack(session.id, m, d, v)
+        onSessionStarted(session.id, rack.id, m, d, v)
       }
-      const rack = await startNewRack(sessionId, m, d, v)
-      onSessionStarted(sessionId, rack.id, m, d, v)
     } finally {
       setLoading(false)
     }
   }
 
   const back = () => {
-    if (step === 'variant') setStep('drill')
+    if (step === 'variant') { setStep('drill') }
     else if (step === 'drill') { setStep('mode'); setMode(null) }
+    else if (step === 'mode' && existingSessionId) {
+      // Kalau ada sesi aktif, back dari mode = tetap di mode (tidak ke landing)
+      // Tidak bisa back ke landing karena sesi sudah dimulai
+    } else {
+      setStep('landing')
+    }
   }
 
   if (loading) {
@@ -67,6 +88,30 @@ export default function HomePage({ onSessionStarted, existingSessionId }: Props)
     )
   }
 
+  // ─── Landing (belum ada sesi) ─────────────────────────────────────────────
+  if (step === 'landing') {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center px-6 pb-10">
+        <div className="font-mono text-accent text-sm font-bold tracking-[0.3em] uppercase mb-3">
+          CueRun
+        </div>
+        <h1 className="font-sans font-bold text-text-primary text-3xl mb-2 text-center">
+          Rack Timer
+        </h1>
+        <p className="text-text-muted text-sm text-center mb-12 leading-relaxed">
+          Track waktu setiap rack billiard kamu.
+        </p>
+        <button
+          onClick={handleStartSession}
+          className="w-full max-w-xs py-5 bg-accent rounded-2xl font-sans font-bold text-surface text-lg active:bg-accent-dim transition-colors"
+        >
+          Mulai Sesi
+        </button>
+      </div>
+    )
+  }
+
+  // ─── Mode / Drill / Variant Selection ────────────────────────────────────
   return (
     <div className="flex-1 flex flex-col px-6 pt-10 pb-4">
       {/* Header */}
@@ -83,23 +128,19 @@ export default function HomePage({ onSessionStarted, existingSessionId }: Props)
           </button>
         )}
 
-        <div className="font-mono text-accent text-xs font-semibold tracking-[0.2em] uppercase mb-2">
-          {existingSessionId ? 'Sesi Aktif' : 'CueRun'}
-        </div>
+        {existingSessionId && step === 'mode' && (
+          <div className="font-mono text-accent text-xs font-semibold tracking-[0.2em] uppercase mb-2">
+            Sesi Aktif
+          </div>
+        )}
 
         <h1 className="font-sans font-bold text-text-primary text-2xl leading-tight">
           {step === 'mode' && 'Pilih Mode'}
           {step === 'drill' && (
-            <>
-              <span className="text-accent">{mode && modeLabel(mode)}</span>
-              <br />Pilih Drill
-            </>
+            <><span className="text-accent">{mode && modeLabel(mode)}</span><br />Pilih Drill</>
           )}
           {step === 'variant' && (
-            <>
-              <span className="text-accent">Break & Run</span>
-              <br />Pilih Grup
-            </>
+            <><span className="text-accent">Break & Run</span><br />Pilih Grup</>
           )}
         </h1>
       </div>
@@ -115,10 +156,20 @@ export default function HomePage({ onSessionStarted, existingSessionId }: Props)
               onClick={() => handleMode(m)}
             />
           ))}
+
+          {/* Akhiri Sesi — hanya muncul kalau sudah ada rack completed */}
+          {existingSessionId && hasCompletedRack && (
+            <button
+              onClick={onEndSession}
+              className="mt-4 w-full py-4 rounded-2xl font-sans font-semibold text-text-muted text-sm border border-border active:bg-surface-2 transition-colors"
+            >
+              Akhiri Sesi
+            </button>
+          )}
         </div>
       )}
 
-      {/* Step: Drill (8 Ball only) */}
+      {/* Step: Drill */}
       {step === 'drill' && (
         <div className="flex flex-col gap-3">
           <ModeButton
@@ -134,7 +185,7 @@ export default function HomePage({ onSessionStarted, existingSessionId }: Props)
         </div>
       )}
 
-      {/* Step: Variant (Break & Run only) */}
+      {/* Step: Variant */}
       {step === 'variant' && (
         <div className="flex flex-col gap-3">
           <ModeButton

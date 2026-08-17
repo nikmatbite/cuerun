@@ -18,7 +18,12 @@ export default function HistoryPage() {
   const [deleting, setDeleting] = useState(false)
 
   const grouped = useMemo(() => {
-    const sorted = [...sessions].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    // Hanya tampilkan sesi yang punya minimal 1 rack completed
+    const sessionIdsWithCompleted = new Set(
+      racks.filter((r) => r.status === 'completed').map((r) => r.sessionId)
+    )
+    const filtered = sessions.filter((s) => sessionIdsWithCompleted.has(s.id))
+    const sorted = filtered.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     const map = new Map<string, Session[]>()
     for (const s of sorted) {
       const date = s.createdAt.split('T')[0]
@@ -26,7 +31,7 @@ export default function HistoryPage() {
       map.get(date)!.push(s)
     }
     return Array.from(map.entries())
-  }, [sessions])
+  }, [sessions, racks])
 
   const handleDeleteConfirm = async () => {
     if (!confirmDelete) return
@@ -139,14 +144,10 @@ function SessionCard({
   onToggle: () => void
   onDeleteRack: (rack: Rack) => void
 }) {
-  const sessionRacks = useMemo(
-    () => racks.filter((r) => r.sessionId === session.id &&
-      (r.status === 'completed' || r.status === 'abandoned')),
+  const completedRacks = useMemo(
+    () => racks.filter((r) => r.sessionId === session.id && r.status === 'completed'),
     [racks, session.id]
   )
-
-  const completedRacks = sessionRacks.filter((r) => r.status === 'completed')
-  const abandonedRacks = sessionRacks.filter((r) => r.status === 'abandoned')
 
   const groups = useMemo(() => {
     const seen = new Set<string>()
@@ -176,9 +177,6 @@ function SessionCard({
           </div>
           <div className="text-text-secondary text-sm truncate">
             {completedRacks.length} rack selesai
-            {abandonedRacks.length > 0 && (
-              <span className="ml-1.5 text-text-muted">· {abandonedRacks.length} dibatalkan</span>
-            )}
             {groups.length > 0 && (
               <span className="ml-1.5 text-text-muted">
                 · {groups.map((g) => modeLabel(g.mode)).filter((v, i, a) => a.indexOf(v) === i).join(', ')}
@@ -195,26 +193,18 @@ function SessionCard({
 
       {expanded && (
         <div className="border-t border-border divide-y divide-border/50">
-          {sessionRacks.length === 0 ? (
-            <div className="px-5 py-4 text-text-muted text-sm">Tidak ada rack di sesi ini.</div>
+          {completedRacks.length === 0 ? (
+            <div className="px-5 py-4 text-text-muted text-sm">Tidak ada rack selesai di sesi ini.</div>
           ) : (
-            <>
-              {groups.map((g, i) => (
-                <GroupDetail
-                  key={i}
-                  session={session}
-                  group={g}
-                  racks={racks}
-                  onDeleteRack={onDeleteRack}
-                />
-              ))}
-              {abandonedRacks.length > 0 && (
-                <AbandonedSection
-                  abandonedRacks={abandonedRacks}
-                  onDeleteRack={onDeleteRack}
-                />
-              )}
-            </>
+            groups.map((g, i) => (
+              <GroupDetail
+                key={i}
+                session={session}
+                group={g}
+                racks={racks}
+                onDeleteRack={onDeleteRack}
+              />
+            ))
           )}
         </div>
       )}
@@ -296,44 +286,6 @@ function GroupDetail({
               rack.durationMs === stats.best ? 'text-accent font-semibold' : 'text-text-secondary'
             }`}>
               {formatMs(rack.durationMs)}
-            </span>
-            <button
-              onClick={() => onDeleteRack(rack)}
-              className="text-text-muted active:text-danger transition-colors p-1.5 -mr-1 flex-shrink-0"
-              aria-label="Hapus rack"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6l-1 14H6L5 6" />
-                <path d="M10 11v6M14 11v6" />
-                <path d="M9 6V4h6v2" />
-              </svg>
-            </button>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function AbandonedSection({
-  abandonedRacks,
-  onDeleteRack,
-}: {
-  abandonedRacks: Rack[]
-  onDeleteRack: (rack: Rack) => void
-}) {
-  return (
-    <div className="px-5 py-4">
-      <div className="font-mono text-text-muted text-xs tracking-[0.15em] uppercase mb-3">
-        Dibatalkan
-      </div>
-      <div className="space-y-1.5">
-        {abandonedRacks.map((rack) => (
-          <div key={rack.id} className="flex items-center gap-2">
-            <span className="text-text-muted font-mono text-xs flex-1 truncate">
-              {modeLabel(rack.mode)} · {drillLabel(rack.drill)}
-              {rack.variant ? ` · ${variantLabel(rack.variant)}` : ''}
             </span>
             <button
               onClick={() => onDeleteRack(rack)}
