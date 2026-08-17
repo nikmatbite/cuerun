@@ -61,7 +61,7 @@ export default function BottomNav({ current, onNavigate, hasActiveSession }: Pro
           return (
             <button
               key={page}
-              onClick={() => onNavigate(page === 'home' ? 'home' : page)}
+              onClick={() => onNavigate(targetPage)}
               className={`flex-1 flex flex-col items-center gap-1 py-3 transition-colors ${
                 isActive ? 'text-accent' : 'text-text-muted'
               }`}

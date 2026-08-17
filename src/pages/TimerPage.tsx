@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react'
 import { GameMode, Drill, Variant } from '@/types'
 import { useTimer } from '@/hooks/useTimer'
 import { formatMs, formatMsShort } from '@/timer/timerEngine'
@@ -27,7 +27,11 @@ interface Props {
   onRackCompleted: () => void
 }
 
-export default function TimerPage({
+export interface TimerPageHandle {
+  resetForNewMode: (newRackId: string) => void
+}
+
+const TimerPage = forwardRef<TimerPageHandle, Props>(function TimerPage({
   sessionId,
   initialRackId,
   mode,
@@ -36,7 +40,7 @@ export default function TimerPage({
   onEndSession,
   onChangeMode,
   onRackCompleted,
-}: Props) {
+}, ref) {
   const { elapsedMs, start, pause, resume, stop, resetToIdle, restoreFromRack } = useTimer()
   const [rackId, setRackId] = useState(initialRackId)
   const [rackCount, setRackCount] = useState(0)
@@ -46,6 +50,18 @@ export default function TimerPage({
   const [finalMs, setFinalMs] = useState(0)
   const [recoveryChecked, setRecoveryChecked] = useState(false)
   const stoppingRef = useRef(false)
+
+  // Expose resetForNewMode ke App.tsx via ref
+  useImperativeHandle(ref, () => ({
+    resetForNewMode: (newRackId: string) => {
+      setRackId(newRackId)
+      setPhase('idle')
+      setFinalMs(0)
+      setRackCount(0)
+      setCompletedTimes([])
+      resetToIdle()
+    },
+  }))
 
   // Check for recovery on mount
   useEffect(() => {
@@ -63,17 +79,12 @@ export default function TimerPage({
         restoreFromRack(active)
 
         if (active.status === 'paused') {
-          // Rack di-pause user sebelumnya — tanya mau lanjut atau batalkan
           setPhase('paused')
           setModal('recovery')
         } else {
-          // Rack sedang running — auto-resume langsung tanpa modal
-          // Timer engine sudah timestamp-based, jadi elapsed otomatis akurat
-          // termasuk waktu saat HP layar mati
           setPhase('running')
         }
       } else {
-        // Fresh start — tunggu user klik Start
         setPhase('idle')
       }
       setRecoveryChecked(true)
@@ -307,4 +318,6 @@ export default function TimerPage({
       )}
     </div>
   )
-}
+})
+
+export default TimerPage

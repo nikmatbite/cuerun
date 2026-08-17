@@ -1,17 +1,17 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { GameMode, Drill, Variant } from '@/types'
 import { useAppState } from '@/hooks/useAppState'
-import { getAllRacks } from '@/services/sessionService'
-import { endSession } from '@/services/sessionService'
+import { getAllRacks, endSession } from '@/services/sessionService'
 import BottomNav from '@/components/BottomNav'
 import HomePage from '@/pages/HomePage'
-import TimerPage from '@/pages/TimerPage'
+import TimerPage, { TimerPageHandle } from '@/pages/TimerPage'
 import StatsPage from '@/pages/StatsPage'
 import HistoryPage from '@/pages/HistoryPage'
 import SettingsPage from '@/pages/SettingsPage'
 
 export default function App() {
   const { state, navigate, startTimerSession, resetToHome } = useAppState()
+  const timerPageRef = useRef<TimerPageHandle>(null)
 
   const [activeSession, setActiveSession] = useState<{
     sessionId: string
@@ -23,7 +23,6 @@ export default function App() {
 
   const [hasCompletedRack, setHasCompletedRack] = useState(false)
 
-  // Check apakah sesi aktif sudah punya rack completed
   useEffect(() => {
     if (!activeSession) {
       setHasCompletedRack(false)
@@ -55,6 +54,8 @@ export default function App() {
     variant: Variant
   ) => {
     if (!activeSession) return
+    // Reset TimerPage ke idle untuk mode baru sebelum update state
+    timerPageRef.current?.resetForNewMode(rackId)
     setActiveSession((prev) => prev ? { ...prev, rackId, mode, drill, variant } : null)
     startTimerSession(activeSession.sessionId, rackId)
   }
@@ -69,11 +70,9 @@ export default function App() {
   }
 
   const handleChangeMode = () => {
-    // Kembali ke home (pilih mode), sesi tetap aktif
     navigate('home')
   }
 
-  // Saat rack selesai (completed), update hasCompletedRack
   const handleRackCompleted = () => {
     setHasCompletedRack(true)
   }
@@ -83,7 +82,6 @@ export default function App() {
   return (
     <div className="flex flex-col min-h-screen bg-surface text-text-primary">
       <main className="flex flex-col flex-1 pb-[68px]" style={{ minHeight: 'calc(100dvh - 68px)' }}>
-        {/* Home — hanya render kalau tidak ada sesi aktif di timer */}
         {currentPage === 'home' && (
           <HomePage
             onSessionStarted={handleSessionStarted}
@@ -94,10 +92,10 @@ export default function App() {
           />
         )}
 
-        {/* TimerPage — tetap di-mount selama ada sesi aktif, disembunyikan saat tab lain */}
         {activeSession && (
           <div className={currentPage === 'timer' ? 'flex flex-col flex-1' : 'hidden'}>
             <TimerPage
+              ref={timerPageRef}
               sessionId={activeSession.sessionId}
               initialRackId={activeSession.rackId}
               mode={activeSession.mode}
