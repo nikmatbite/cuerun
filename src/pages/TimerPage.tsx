@@ -81,6 +81,17 @@ export default function TimerPage({
     checkRecovery()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Reset ke idle saat mode/rack baru dipilih (ganti mode dari luar)
+  useEffect(() => {
+    if (!recoveryChecked) return  // tunggu recovery check selesai dulu
+    setRackId(initialRackId)
+    setPhase('idle')
+    setFinalMs(0)
+    setRackCount(0)
+    setCompletedTimes([])
+    resetToIdle()
+  }, [initialRackId]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const handlePause = async () => {
     pause()
     setPhase('paused')

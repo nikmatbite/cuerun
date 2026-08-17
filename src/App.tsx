@@ -118,6 +118,7 @@ export default function App() {
       <BottomNav
         current={currentPage}
         onNavigate={(page) => navigate(page)}
+        hasActiveSession={activeSession !== null}
       />
     </div>
   )

@@ -35,6 +35,53 @@ export function filterByGroup(
   )
 }
 
+// Khusus untuk Break & Run: gabungkan solids + stripes tanpa filter variant
+export function filterByGroupIgnoreVariant(
+  racks: Rack[],
+  mode: GameMode,
+  drill: Drill
+): Rack[] {
+  return filterCompleted(racks).filter(
+    (r) => r.mode === mode && r.drill === drill
+  )
+}
+
+// Overall stats untuk Break & Run (solids + stripes digabung)
+export function calculateOverallStatisticsMerged(
+  allRacks: Rack[],
+  mode: GameMode,
+  drill: Drill
+): OverallStats {
+  const completed = filterByGroupIgnoreVariant(allRacks, mode, drill)
+  const durations = completed.map((r) => r.durationMs)
+
+  if (durations.length === 0) {
+    return {
+      mode,
+      drill,
+      variant: null,
+      totalRacks: 0,
+      personalBest: 0,
+      average: 0,
+      median: 0,
+      bestAverage5: null,
+      consistency: null,
+    }
+  }
+
+  return {
+    mode,
+    drill,
+    variant: null,
+    totalRacks: durations.length,
+    personalBest: calculateBest(durations),
+    average: calculateAverage(durations),
+    median: calculateMedian(durations),
+    bestAverage5: calculateBestAverage5(durations),
+    consistency: calculateConsistency(durations),
+  }
+}
+
 export function filterBySession(racks: Rack[], sessionId: string): Rack[] {
   return racks.filter((r) => r.sessionId === sessionId)
 }

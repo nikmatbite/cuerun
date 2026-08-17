@@ -4,6 +4,7 @@ import { AppPage } from '@/types'
 interface Props {
   current: AppPage
   onNavigate: (page: AppPage) => void
+  hasActiveSession: boolean
 }
 
 interface NavItem {
@@ -42,18 +43,21 @@ const SettingsIcon = () => (
 )
 
 const NAV_ITEMS: NavItem[] = [
-  { page: 'home', label: 'Timer', icon: <TimerIcon /> },
+  { page: 'timer', label: 'Timer', icon: <TimerIcon /> },
   { page: 'stats', label: 'Statistik', icon: <StatsIcon /> },
   { page: 'history', label: 'Riwayat', icon: <HistoryIcon /> },
   { page: 'settings', label: 'Pengaturan', icon: <SettingsIcon /> },
 ]
 
-export default function BottomNav({ current, onNavigate }: Props) {
+export default function BottomNav({ current, onNavigate, hasActiveSession }: Props) {
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-surface-1 border-t border-border safe-area-bottom">
       <div className="flex">
         {NAV_ITEMS.map(({ page, label, icon }) => {
-          const isActive = current === page || (current === 'timer' && page === 'home')
+          const isActive = current === page || (page === 'timer' && current === 'home')
+          const targetPage = page === 'timer'
+            ? (hasActiveSession ? 'timer' : 'home')
+            : page
           return (
             <button
               key={page}
