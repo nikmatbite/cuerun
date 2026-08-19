@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react'
-import { GameMode, Drill, Variant, OverallStats } from '@/types'
+import { GameMode, Drill, OverallStats } from '@/types'
 import { modeLabel, drillLabel } from '@/utils'
 import { formatMs } from '@/timer/timerEngine'
 import { calculateOverallStatistics, calculateOverallStatisticsMerged } from '@/statistics/stats'
 import { useData } from '@/hooks/useData'
 
-// Break & Run Solids+Stripes digabung jadi satu entry (merged: true)
 type GroupSelection =
   | { mode: '8ball'; drill: 'solo_rack'; variant: null; merged: false }
   | { mode: '8ball'; drill: 'break_run'; variant: null; merged: true }
@@ -19,10 +18,52 @@ const GROUPS: GroupSelection[] = [
   { mode: '10ball', drill: 'full_rack', variant: null, merged: false },
 ]
 
+const STAT_INFO: { key: string; label: string; desc: string }[] = [
+  {
+    key: 'total',
+    label: 'Total Rack',
+    desc: 'Jumlah rack yang sudah kamu selesaikan (berstatus completed) untuk mode ini.',
+  },
+  {
+    key: 'pb',
+    label: 'Personal Best',
+    desc: 'Waktu tercepat dari semua rack yang pernah kamu selesaikan di mode ini.',
+  },
+  {
+    key: 'avg',
+    label: 'Rata-rata',
+    desc: 'Rata-rata waktu dari seluruh rack yang sudah selesai. Semakin rendah, semakin baik.',
+  },
+  {
+    key: 'median',
+    label: 'Median',
+    desc: 'Nilai tengah dari semua waktu rack. Lebih tahan terhadap outlier dibanding rata-rata — cocok untuk melihat performa "tipikal" kamu.',
+  },
+  {
+    key: 'ba5',
+    label: 'Best Avg (5)',
+    desc: 'Rata-rata terbaik dari 5 rack berturutan. Mengukur performa konsisten terbaik kamu dalam satu rangkaian — bukan hanya satu momen bagus.',
+  },
+  {
+    key: 'consistency',
+    label: 'Konsistensi',
+    desc: 'Seberapa stabil waktu rack-rack kamu. Dihitung dari Coefficient of Variation (CV) — semakin kecil variasinya, semakin tinggi skornya. 100% = sempurna konsisten. Butuh minimal 3 rack untuk dihitung.',
+  },
+]
+
+function consistencyLabel(score: number): string {
+  if (score >= 85) return 'Sangat Konsisten'
+  if (score >= 70) return 'Konsisten'
+  if (score >= 50) return 'Cukup'
+  if (score >= 30) return 'Perlu Latihan'
+  return 'Tidak Konsisten'
+}
+
 export default function StatsPage() {
   const { racks, loading } = useData()
   const [selected, setSelected] = useState<GroupSelection>(GROUPS[0])
   const [stats, setStats] = useState<OverallStats | null>(null)
+  const [showGuide, setShowGuide] = useState(false)
 
   useEffect(() => {
     if (!loading) {
@@ -40,7 +81,57 @@ export default function StatsPage() {
 
   return (
     <div className="flex-1 flex flex-col px-4 pt-6 pb-4 overflow-y-auto">
-      <h1 className="font-sans font-bold text-text-primary text-2xl px-2 mb-6">Statistik</h1>
+      {/* Header */}
+      <div className="flex items-center justify-between px-2 mb-6">
+        <h1 className="font-sans font-bold text-text-primary text-2xl">Statistik</h1>
+        <button
+          onClick={() => setShowGuide((v) => !v)}
+          className={`w-8 h-8 rounded-full flex items-center justify-center border transition-colors ${
+            showGuide
+              ? 'bg-accent border-accent text-surface'
+              : 'bg-surface-2 border-border text-text-muted active:text-text-primary'
+          }`}
+          aria-label="Panduan statistik"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}
+            strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Accordion Guide */}
+      {showGuide && (
+        <div className="mx-2 mb-5 bg-surface-2 border border-border rounded-2xl overflow-hidden">
+          <div className="px-5 pt-4 pb-2">
+            <p className="font-sans font-semibold text-text-primary text-sm mb-3">
+              Panduan Statistik
+            </p>
+          </div>
+          <div className="divide-y divide-border">
+            {STAT_INFO.map((item) => (
+              <div key={item.key} className="px-5 py-3">
+                <p className="font-sans font-semibold text-text-primary text-xs mb-0.5">
+                  {item.label}
+                </p>
+                <p className="font-sans text-text-muted text-xs leading-relaxed">
+                  {item.desc}
+                </p>
+              </div>
+            ))}
+          </div>
+          <div className="px-5 py-3">
+            <button
+              onClick={() => setShowGuide(false)}
+              className="text-accent text-xs font-semibold font-sans"
+            >
+              Tutup ↑
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Group Picker */}
       <div className="flex gap-2 overflow-x-auto pb-2 px-2 -mx-2 no-scrollbar mb-6">
@@ -120,23 +211,38 @@ function StatCard({
 }
 
 function ConsistencyCard({ score }: { score: number | null }) {
-  const display = score !== null ? `${score} / 100` : 'Belum cukup data'
-  const color = score === null ? 'text-text-muted' : score >= 80 ? 'text-success' : score >= 60 ? 'text-warning' : 'text-danger'
-  const barWidth = score !== null ? `${score}%` : '0%'
+  const pct = score !== null ? `${score}%` : null
+  const label = score !== null ? consistencyLabel(score) : null
+  const color = score === null
+    ? 'text-text-muted'
+    : score >= 85 ? 'text-success'
+    : score >= 70 ? 'text-success'
+    : score >= 50 ? 'text-warning'
+    : 'text-danger'
+  const barColor = score === null
+    ? ''
+    : score >= 70 ? 'bg-success'
+    : score >= 50 ? 'bg-warning'
+    : 'bg-danger'
 
   return (
     <div className="bg-surface-2 border border-border rounded-2xl px-5 py-4">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-1">
         <span className="font-sans text-text-secondary text-sm">Konsistensi</span>
-        <span className={`font-mono font-semibold text-base ${color}`}>{display}</span>
+        {score !== null ? (
+          <div className="flex items-center gap-2">
+            <span className={`font-sans text-xs ${color}`}>{label}</span>
+            <span className={`font-mono font-bold text-base ${color}`}>{pct}</span>
+          </div>
+        ) : (
+          <span className="font-sans text-text-muted text-sm">Belum cukup data</span>
+        )}
       </div>
       {score !== null && (
-        <div className="h-1.5 bg-surface-3 rounded-full overflow-hidden">
+        <div className="mt-2 h-1.5 bg-surface-3 rounded-full overflow-hidden">
           <div
-            className={`h-full rounded-full transition-all duration-500 ${
-              score >= 80 ? 'bg-success' : score >= 60 ? 'bg-warning' : 'bg-danger'
-            }`}
-            style={{ width: barWidth }}
+            className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+            style={{ width: `${score}%` }}
           />
         </div>
       )}

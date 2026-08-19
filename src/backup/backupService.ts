@@ -32,28 +32,38 @@ export async function downloadBackup(): Promise<void> {
   const date = new Date().toISOString().split('T')[0]
   const filename = `cuerun-backup-${date}.json`
 
-  // Try Web Share API (mobile)
-  if (navigator.canShare && navigator.share) {
-    const file = new File([blob], filename, { type: 'application/json' })
-    if (navigator.canShare({ files: [file] })) {
-      await navigator.share({
-        title: 'CueRun Backup',
-        text: `CueRun backup — ${date}`,
-        files: [file],
-      })
-      return
+  // Coba Web Share API dulu (mobile) — kalau gagal apapun, fallback ke download
+  let shared = false
+  try {
+    if (
+      typeof navigator.canShare === 'function' &&
+      typeof navigator.share === 'function'
+    ) {
+      const file = new File([blob], filename, { type: 'application/json' })
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: 'CueRun Backup',
+          text: `CueRun backup — ${date}`,
+          files: [file],
+        })
+        shared = true
+      }
     }
+  } catch {
+    // Share dibatalkan user atau tidak didukung — lanjut ke download
+    shared = false
   }
 
-  // Fallback: trigger download
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  if (!shared) {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
 }
 
 export async function getLastBackupTime(): Promise<string | null> {
