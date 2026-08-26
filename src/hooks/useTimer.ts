@@ -34,51 +34,36 @@ export function useTimer(): UseTimerReturn {
 
   // RAF display loop
   useEffect(() => {
-    const tick = () => {
-      const seg = segmentRef.current
-      if (seg.state === 'running') {
-        setElapsedMs(computeElapsed(seg, Date.now()))
-        rafRef.current = requestAnimationFrame(tick)
-      }
-    }
-
-    if (segment.state === 'running') {
-      rafRef.current = requestAnimationFrame(tick)
-    } else {
+    if (segment.state !== 'running') {
       cancelAnimationFrame(rafRef.current)
       setElapsedMs(computeElapsed(segment, Date.now()))
+      return
     }
 
-    return () => cancelAnimationFrame(rafRef.current)
-  }, [segment.state]) // eslint-disable-line react-hooks/exhaustive-deps
+    let animId: number
+    const tick = () => {
+      setElapsedMs(computeElapsed(segmentRef.current, Date.now()))
+      animId = requestAnimationFrame(tick)
+      rafRef.current = animId
+    }
+    animId = requestAnimationFrame(tick)
+    rafRef.current = animId
 
-  // Page Visibility API — handle layar mati/hidup
-  // Saat layar hidup lagi, force re-render dengan elapsed terbaru
-  // Timer engine sudah timestamp-based jadi otomatis akurat
+    return () => cancelAnimationFrame(animId)  // ← pakai local variable, bukan rafRef
+  }, [segment.state])
+
+  // Page Visibility — HANYA trigger re-sync elapsed, BUKAN kelola RAF
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
+        // Tidak perlu restart RAF — useEffect([segment.state]) sudah handle itu
+        // Hanya perlu sync nilai elapsed setelah "lompatan waktu"
         const seg = segmentRef.current
         if (seg.state === 'running') {
-          // Force update elapsed dari timestamp terbaru
           setElapsedMs(computeElapsed(seg, Date.now()))
-          // Restart RAF loop
-          cancelAnimationFrame(rafRef.current)
-          const tick = () => {
-            const s = segmentRef.current
-            if (s.state === 'running') {
-              setElapsedMs(computeElapsed(s, Date.now()))
-              rafRef.current = requestAnimationFrame(tick)
-            }
-          }
-          rafRef.current = requestAnimationFrame(tick)
         }
-      } else {
-        // Layar mati — stop RAF (tidak perlu update display)
-        cancelAnimationFrame(rafRef.current)
       }
     }
-
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [])
