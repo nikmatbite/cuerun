@@ -107,8 +107,7 @@ const TimerPage = forwardRef<TimerPageHandle, Props>(function TimerPage({
   const handleStop = async () => {
     if (stoppingRef.current) return
     stoppingRef.current = true
-    const elapsed = elapsedMs
-    stop()
+    const elapsed = stop()   // ← pakai return value dari stop(), bukan elapsedMs
     setPhase('finished')
     setFinalMs(elapsed)
     setRackCount((c) => c + 1)
